@@ -8,6 +8,5 @@ COPY package*.json ./
 RUN npm ci --omit=dev
 
 COPY cabecinhabot.js .
-COPY config.json .
 
 CMD ["node", "cabecinhabot.js"]

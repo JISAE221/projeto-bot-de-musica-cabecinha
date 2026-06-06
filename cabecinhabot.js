@@ -1,9 +1,14 @@
+require('dotenv').config();
 process.env.FFMPEG_PATH = require('ffmpeg-static');
 
 const { Client, GatewayIntentBits } = require('discord.js');
 const ytdlp = require('yt-dlp-exec');
 const portavoz = require('@discordjs/voice');
-const config = require('./config.json');
+
+if (!process.env.DISCORD_TOKEN) {
+    console.error('cadê o DISCORD_TOKEN no .env caralho, sem isso eu nem subo');
+    process.exit(1);
+}
 
 const bot = new Client({
     intents: [
@@ -18,7 +23,7 @@ const bot = new Client({
 let player = null;
 let connection = null;
 
-bot.login(config.token);
+bot.login(process.env.DISCORD_TOKEN);
 bot.on('clientReady', () => console.log('TO FUNCIONANDO BCT'));
 
 bot.on('messageCreate', async msg => {
