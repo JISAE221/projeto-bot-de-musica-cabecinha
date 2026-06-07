@@ -23,6 +23,22 @@ O bot tava funcionando, mas era um arquivo só, sem fila, com travamento aleató
 - O `git push -u origin main` não funciona se você ainda não rodou `git add` + `git commit`. O `main` literalmente não existe sem commit apontando pra ele. Bobeira boba que me custou uns 10 minutos.
 - Mermaid no GitHub renderiza sozinho — descobri agora. Achei que ia precisar de extensão ou imagem. Dá pra documentar arquitetura no próprio README sem virar PNG.
 
+**Depois disso, decidi adotar TDD pra valer no projeto.**
+
+Faz sentido: refatoração grande chegando, vou mexer em service de música que tem comportamento async, fila de estado, retry de stream… esse tipo de coisa sem teste é receita pra eu quebrar feature antiga sem perceber. Red → green → refactor pra todo módulo novo a partir de agora.
+
+Escolhi **Vitest** em vez de Jest:
+- API quase igual ao Jest, então a curva de aprendizado é zero
+- Mais rápido, ESM-first
+- Watch mode bom de verdade
+
+**Aprendizado já no setup do Vitest:**
+
+- Vitest 4.x usa um engine novo chamado **Rolldown** (sucessor do Rollup, escrito em Rust). No Windows ele tenta carregar um binding nativo `.node` que **não baixa direito** na instalação padrão. Quebrou na primeira execução de `npm test` com `Cannot find module './rolldown-binding.win32-x64-msvc.node'`.
+- Solução: **downgrade pra Vitest 3.x** (que ainda usa Vite/esbuild puro). Funciona perfeito no Windows. Vou ficar no 3 até o ecossistema Rolldown estabilizar.
+- Lição: versão mais nova nem sempre é a versão certa, principalmente em ferramenta de build.
+- Estrutura adotada: `tests/` espelhando `src/`, scripts `npm test` (run único) e `npm test:watch` (modo dev). Coverage com `v8`.
+
 ---
 
 ## Antes de existir esse diário
