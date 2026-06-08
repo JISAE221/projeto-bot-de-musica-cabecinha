@@ -6,6 +6,24 @@ Ordem: mais recente em cima.
 
 ---
 
+## 2026-06-08 — Rede confirmada como vilã, plano de otimização local antes da nuvem
+
+O `NetworkWatcher` pagou o investimento já no primeiro dia útil: rodei o bot com call aberta e terminal disputando uplink, e os logs `[NET]` confirmaram **perda de pacote real**, não suspeita. Pra fechar o diagnóstico, lembrei que o módulo wifi do notebook tá com problema de hardware há um tempo — então é a soma: rede local instável + hardware degradado + ambiente concorrendo (call/terminal).
+
+Conclusão imediata: **migrar pra Oracle Cloud não é mais "vou fazer um dia", é parte do conserto do bug.** O delay nunca vai cair pra zero rodando aqui, por melhor que eu otimize.
+
+**Mas antes de subir, otimização local primeiro.** Lógica: o que conserto agora vale tanto local quanto na nuvem, e separa o que é "minha rede" do que é "o bot tá lento de fato". Se eu subir sem otimizar, vou perseguir gargalo errado depois.
+
+**Plano dessa rodada (TDD em tudo que for novo):**
+
+1. **Fix do delay — eliminar transcode do ffmpeg.** Hoje o `~play` usa `format: 'bestaudio'` genérico + `StreamType.Arbitrary`, o que força o `@discordjs/voice` a chamar ffmpeg pra converter pra opus (que é o que o Discord aceita). Mas o YouTube já entrega opus em container webm — se eu pedir explicitamente `bestaudio[ext=webm][acodec=opus]` e usar `StreamType.WebmOpus`, o stream vai direto, sem transcode. Menos CPU, primeiro pacote sai mais cedo, e ainda é mais resiliente em rede ruim porque o payload é menor.
+2. **Extrair `playbackConfig`** — função pura que devolve `{ ytdlpFormat, streamType }`. Testar isso é trivial (entrada/saída), e abre caminho pra TDD em cima dos formatos sem ter que mockar Discord inteiro. Vai contra o "não criar abstração à toa", mas aqui o ganho é real: o `~play` hoje é uma função-monstro inline dentro do `messageCreate`, intestável.
+3. **Limpar `package.json`.** Tem entulho que veio de typos e tentativas antigas: `botmusic-cabecinha` (auto-referência), `i` e `npm` (typo de `npm i`), `@distube/ytdl-core` (substituído pelo `yt-dlp`), `play-dl` (idem). Some tudo. `opusscript` fica como fallback caso algum vídeo não tenha trilha webm/opus.
+
+Depois disso, rodar `~play` de novo, ver o `[PLAY][t+Xms] Playing` cair perto do `primeiro byte` (sem o gap do ffmpeg fazendo transcode), e aí sim partir pra migração Oracle em sessão separada.
+
+---
+
 ## 2026-06-06 (continuação) — TDD na prática: nasce o NetworkWatcher
 
 Rodei o bot pela primeira vez depois da migração pro `.env` e bateu na cara dura: **2 minutos pra começar a tocar uma música**. O bot diz "JA TA TOCANDO PAPAI" quase instantâneo, mas o áudio leva uma eternidade pra sair. Antes ele demorava uns 30 segundos, hoje deu 2 min, ou seja, varia. Suspeito da minha rede também — tô rodando local, e qualquer fricção na conexão com YouTube ou Discord vai aparecer aqui.
