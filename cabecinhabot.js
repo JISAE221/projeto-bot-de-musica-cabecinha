@@ -6,6 +6,7 @@ import { Client, GatewayIntentBits } from 'discord.js';
 import ytdlp from 'yt-dlp-exec';
 import * as portavoz from '@discordjs/voice';
 import { NetworkWatcher } from './src/services/networkWatcher.js';
+import { buildPlaybackConfig } from './src/services/playbackConfig.js';
 
 if (!process.env.DISCORD_TOKEN) {
     console.error('cadê o DISCORD_TOKEN no .env caralho, sem isso eu nem subo');
@@ -115,10 +116,12 @@ bot.on('messageCreate', async msg => {
             connection.subscribe(player);
 
             const tocar = () => {
-                marco('voice connection READY — spawnando yt-dlp');
+                const { ytdlpFormat, ytdlpExtractorArgs, streamType } = buildPlaybackConfig();
+                marco(`voice connection READY — spawnando yt-dlp (format=${ytdlpFormat}, extractorArgs=${ytdlpExtractorArgs})`);
                 const processo = ytdlp.exec(url, {
                     output: '-',
-                    format: 'bestaudio',
+                    format: ytdlpFormat,
+                    extractorArgs: ytdlpExtractorArgs,
                     quiet: true,
                 });
                 marco('yt-dlp spawnado');
@@ -131,9 +134,9 @@ bot.on('messageCreate', async msg => {
                 processo.stdout.once('data', () => marco('primeiro byte do yt-dlp recebido'));
 
                 const resource = portavoz.createAudioResource(processo.stdout, {
-                    inputType: portavoz.StreamType.Arbitrary,
+                    inputType: streamType,
                 });
-                marco('AudioResource criado');
+                marco(`AudioResource criado (streamType=${streamType})`);
 
                 player.play(resource);
                 marco('player.play() chamado');

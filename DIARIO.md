@@ -6,6 +6,31 @@ Ordem: mais recente em cima.
 
 ---
 
+## 2026-06-08 (continuação) — Fix do transcode validado, novo gargalo aparece
+
+Rodei o bot com o `playbackConfig` plugado e os números falaram alto:
+
+```
+t+23028ms primeiro byte do yt-dlp recebido
+t+23036ms AudioPlayerStatus.Playing
+```
+
+**8ms** entre o primeiro byte chegar e o áudio efetivamente começar. Antes esse gap era de vários segundos (probe + ffmpeg). Hipótese confirmada: era o transcode mesmo o vilão da etapa final.
+
+**Mas o log revelou o que ficava escondido:** o `yt-dlp` leva ~21s entre ser spawnado e cuspir o primeiro byte. Esse gargalo sempre existiu, só ficava mascarado pelo ffmpeg trabalhando em cima. Conserto um problema, descubro o próximo — clássico de profiling: você só vê o segundo gargalo depois de remover o primeiro.
+
+**Próxima otimização aplicada (mesma sessão, mesmo TDD):** `extractor-args "youtube:player_client=android"`. O cliente Android do YouTube pula a etapa de decoding de signature do player JS (que é o ponto lento da extração no cliente web). Adicionei o teste no `playbackConfig.test.js`, vi vermelho, estendi o `buildPlaybackConfig()`, ficou verde, pluguei no `~play`. Espero que corte boa parte dos 21s — vou re-medir.
+
+**Anomalia menor pra investigar depois:** entre `yt-dlp spawnado` e `AudioResource criado` deu 2.5s, e ali são 4 statements síncronos. Suspeito de overhead do `yt-dlp-exec` (verificação de binary, bootstrap interno). Baixa prioridade, mas anotado.
+
+**Outras coisas dessa rodada:**
+
+- `package.json` limpo: saíram `botmusic-cabecinha` (auto-referência boba), `i` (typo de `npm i`), `npm` (não faz sentido como dep do projeto), `@distube/ytdl-core` e `play-dl` (sobras da era pré-yt-dlp). 222 pacotes saíram do `node_modules`. Mantive `opusscript` como fallback caso algum vídeo não tenha trilha webm/opus.
+- `npm audit` apontou um CVE crítico no Vitest (`GHSA-5xrq-8626-4rwp`), mas só é explorável quando você roda `vitest --ui` (servidor web). A gente usa `vitest run` (CLI). Decisão: deixa como tá. Subir pra 4.x reabriria o problema do Rolldown no Windows que já documentei.
+- `@discordjs/voice@0.19.2` quer Node >=22.12, eu tô no 20.15. Só warning, não erro. Na Oracle vou instalar Node 22 direto e resolve.
+
+---
+
 ## 2026-06-08 — Rede confirmada como vilã, plano de otimização local antes da nuvem
 
 O `NetworkWatcher` pagou o investimento já no primeiro dia útil: rodei o bot com call aberta e terminal disputando uplink, e os logs `[NET]` confirmaram **perda de pacote real**, não suspeita. Pra fechar o diagnóstico, lembrei que o módulo wifi do notebook tá com problema de hardware há um tempo — então é a soma: rede local instável + hardware degradado + ambiente concorrendo (call/terminal).

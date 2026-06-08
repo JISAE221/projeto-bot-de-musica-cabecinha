@@ -20,4 +20,10 @@ describe('buildPlaybackConfig', () => {
 
         expect(config.streamType).toBe(StreamType.WebmOpus);
     });
+
+    it('pede player_client=android pro yt-dlp, que resolve mais rápido que o cliente web', () => {
+        const config = buildPlaybackConfig();
+
+        expect(config.ytdlpExtractorArgs).toBe('youtube:player_client=android');
+    });
 });
