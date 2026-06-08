@@ -1,9 +1,11 @@
-require('dotenv').config();
-process.env.FFMPEG_PATH = require('ffmpeg-static');
+import 'dotenv/config';
+import ffmpegPath from 'ffmpeg-static';
+process.env.FFMPEG_PATH = ffmpegPath;
 
-const { Client, GatewayIntentBits } = require('discord.js');
-const ytdlp = require('yt-dlp-exec');
-const portavoz = require('@discordjs/voice');
+import { Client, GatewayIntentBits } from 'discord.js';
+import ytdlp from 'yt-dlp-exec';
+import * as portavoz from '@discordjs/voice';
+import { NetworkWatcher } from './src/services/networkWatcher.js';
 
 if (!process.env.DISCORD_TOKEN) {
     console.error('cadê o DISCORD_TOKEN no .env caralho, sem isso eu nem subo');
@@ -20,11 +22,36 @@ const bot = new Client({
     ]
 });
 
+const watcher = new NetworkWatcher({
+    targets: {
+        youtube: 'https://www.youtube.com',
+        ytcdn:   'https://i.ytimg.com',
+        discord: 'https://discord.com/api/v10/gateway',
+    },
+    intervalMs: 15000,
+    timeoutMs: 5000,
+    degradedThresholdMs: 800,
+});
+
+watcher.on('check', resultado => {
+    const partes = Object.entries(resultado).map(([nome, dados]) =>
+        dados.ok ? `${nome}=${dados.latencyMs}ms` : `${nome}=ERR(${dados.error})`
+    );
+    console.log(`[NET] ${partes.join(' | ')}`);
+});
+
+watcher.on('degraded', ({ target, latencyMs }) => {
+    console.warn(`[NET][DEGRADED] ${target} respondeu em ${latencyMs}ms (acima do threshold)`);
+});
+
 let player = null;
 let connection = null;
 
 bot.login(process.env.DISCORD_TOKEN);
-bot.on('clientReady', () => console.log('TO FUNCIONANDO BCT'));
+bot.on('clientReady', () => {
+    console.log('TO FUNCIONANDO BCT');
+    watcher.start();
+});
 
 bot.on('messageCreate', async msg => {
     if (msg.author.bot) return;
@@ -48,6 +75,16 @@ bot.on('messageCreate', async msg => {
         if (!perms.has('Connect') || !perms.has('Speak'))
             return msg.channel.send('não tenho permissão nesse canal cara, pede pro admin me liberar Connect e Speak');
 
+        const t0 = Date.now();
+        const marco = etapa => console.log(`[PLAY][t+${Date.now() - t0}ms] ${etapa}`);
+
+        marco('~play recebido — capturando snapshot de rede');
+        const snapshot = await watcher.checkOnce();
+        const snapStr = Object.entries(snapshot).map(([n, d]) =>
+            d.ok ? `${n}=${d.latencyMs}ms` : `${n}=ERR`
+        ).join(' | ');
+        marco(`snapshot: ${snapStr}`);
+
         try {
             connection = portavoz.joinVoiceChannel({
                 channelId: canal.id,
@@ -56,6 +93,7 @@ bot.on('messageCreate', async msg => {
                 selfDeaf: false,
                 selfMute: false,
             });
+            marco('joinVoiceChannel chamado');
 
             player = portavoz.createAudioPlayer({
                 behaviors: { noSubscriber: portavoz.NoSubscriberBehavior.Play }
@@ -66,6 +104,10 @@ bot.on('messageCreate', async msg => {
                 msg.channel.send('DEU RUIM no player, tenta outra URL');
             });
 
+            player.on(portavoz.AudioPlayerStatus.Playing, () => {
+                marco('AudioPlayerStatus.Playing — áudio começou de verdade');
+            });
+
             player.on(portavoz.AudioPlayerStatus.Idle, () =>
                 msg.channel.send('acabou a música mano... bota mais uma ou eu fico aqui olhando pra vocês')
             );
@@ -73,22 +115,28 @@ bot.on('messageCreate', async msg => {
             connection.subscribe(player);
 
             const tocar = () => {
+                marco('voice connection READY — spawnando yt-dlp');
                 const processo = ytdlp.exec(url, {
                     output: '-',
                     format: 'bestaudio',
                     quiet: true,
                 });
+                marco('yt-dlp spawnado');
 
                 processo.on('error', err => {
                     console.error('[ERRO yt-dlp]', err.message);
                     msg.channel.send('DEU RUIM no yt-dlp cara, tenta outra URL');
                 });
 
+                processo.stdout.once('data', () => marco('primeiro byte do yt-dlp recebido'));
+
                 const resource = portavoz.createAudioResource(processo.stdout, {
                     inputType: portavoz.StreamType.Arbitrary,
                 });
+                marco('AudioResource criado');
 
                 player.play(resource);
+                marco('player.play() chamado');
                 msg.channel.send('JA TA TOCANDO PAPAI 🎵');
             };
 

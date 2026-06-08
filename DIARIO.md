@@ -6,7 +6,47 @@ Ordem: mais recente em cima.
 
 ---
 
-## 2026-06-06 — Bora estruturar isso aqui
+## 2026-06-06 (continuação) — TDD na prática: nasce o NetworkWatcher
+
+Rodei o bot pela primeira vez depois da migração pro `.env` e bateu na cara dura: **2 minutos pra começar a tocar uma música**. O bot diz "JA TA TOCANDO PAPAI" quase instantâneo, mas o áudio leva uma eternidade pra sair. Antes ele demorava uns 30 segundos, hoje deu 2 min, ou seja, varia. Suspeito da minha rede também — tô rodando local, e qualquer fricção na conexão com YouTube ou Discord vai aparecer aqui.
+
+Já dei como bug, vai virar o **primeiro debug oficial do projeto**. E como agora tô fazendo TDD, isso significa: teste antes do fix, sempre.
+
+**Decisão imediata:** antes de tentar consertar, eu preciso de **dados**. Não dá pra otimizar no escuro. Então fizemos duas coisas em paralelo:
+
+1. **`NetworkWatcher`** — service novo pra monitorar latência até YouTube e Discord enquanto o bot tá rodando. A cada 15s ele dispara um HEAD em três endpoints (`www.youtube.com`, `i.ytimg.com`, `discord.com/api/v10/gateway`) e loga o RTT. Se passar de 800ms, ele cuspe um aviso `[NET][DEGRADED]`. Também tem método `checkOnce()` pra tirar snapshot pontual.
+2. **Instrumentação no `~play`** — agora cada etapa do pipeline (join voice, spawn yt-dlp, primeiro byte do stream, createAudioResource, player.play, e o `AudioPlayerStatus.Playing` que dispara quando o áudio COMEÇA DE VERDADE) tem um log `[PLAY][t+Xms]`. Vou conseguir ver onde os segundos são gastos.
+
+**TDD aplicado de verdade pela primeira vez nesse projeto:**
+
+Escrevi os testes do NetworkWatcher antes do código. 10 testes cobrindo: `checkOnce` com sucesso, erro, timeout, múltiplos targets em paralelo, `start/stop` periódico, eventos `check` e `degraded`. Rodei → tudo vermelho (módulo não existia). Implementei → ficou tudo verde. Quase tudo.
+
+**Bobagem que aprendi:** o teste de `degraded` falhou por timeout. O motivo me pegou de surpresa — eu tava usando `vi.useFakeTimers()` no `beforeEach`, e dentro do mock do fetcher eu usava `setTimeout(() => resolve, 500)` pra simular latência. Só que com fake timers ativos, esse `setTimeout` também era fake e nunca disparava. A promise do mock nunca resolvia → o teste travava 5s → vitest matava por timeout.
+
+Conserto: avançar o timer manualmente dentro do teste.
+
+```js
+const promessa = watcher.checkOnce();
+await vi.advanceTimersByTimeAsync(600);
+await promessa;
+```
+
+Anotado pro futuro: **com fake timers, todo `setTimeout` precisa ser disparado manualmente, inclusive os que eu mesmo coloco nos mocks.** Tem hora que ferramenta poderosa vira armadilha.
+
+**Mudança colateral:** convertemos o `cabecinhabot.js` de CommonJS pra ESM (`import` em vez de `require`). O `NetworkWatcher` nasceu ESM (Vitest é nativo ESM), e em vez de gambiarrar com dynamic import, virei a chave de uma vez. Adicionei `"type": "module"` no `package.json`. Funcionou sem nenhum efeito colateral nas dependências (discord.js, ffmpeg-static, yt-dlp-exec, dotenv — todos têm export ESM compatível).
+
+**O que falta pra fechar o debug:**
+
+Rodar o bot agora com a instrumentação, dar um `~play` e olhar o log. A linha de tempo vai me dizer:
+
+- Se `joinVoiceChannel → READY` demora muito → problema é handshake do Discord
+- Se `READY → yt-dlp primeiro byte` demora muito → problema é yt-dlp resolvendo o vídeo
+- Se `primeiro byte → AudioPlayerStatus.Playing` demora muito → problema é probe do `createAudioResource` ou buffer inicial
+- Se o `[NET]` mostrar RTT alto → minha rede tá ruim mesmo e parte do problema é local
+
+Depois disso, escrever teste que reproduz o gargalo e atacar com fix (provavelmente: `format: 'bestaudio[ext=webm][acodec=opus]'` + `inputType: StreamType.WebmOpus` pra eliminar transcode).
+
+---
 
 O bot tava funcionando, mas era um arquivo só, sem fila, com travamento aleatório no `yt-dlp` e o token do Discord dando sopa no `config.json`. Resolvi sentar e tratar o projeto como projeto de verdade, não mais como "experimento de fim de semana que não morreu".
 

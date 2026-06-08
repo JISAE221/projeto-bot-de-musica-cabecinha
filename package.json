@@ -1,6 +1,7 @@
 {
   "name": "botmusic-cabecinha",
   "version": "1.0.0",
+  "type": "module",
   "main": "cabecinhabot.js",
   "scripts": {
     "start": "node cabecinhabot.js",
